@@ -24,8 +24,8 @@ export function AnalysisResult({
     return (
       <div className="space-y-6 opacity-60 animate-pulse">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <Card className="bg-card/50 border-dashed"><CardContent className="h-40" /></Card>
-          <Card className="bg-card/50 border-dashed"><CardContent className="h-40" /></Card>
+          <Card className="glass-card border-dashed"><CardContent className="h-40" /></Card>
+          <Card className="glass-card border-dashed"><CardContent className="h-40" /></Card>
         </div>
       </div>
     );
@@ -35,8 +35,8 @@ export function AnalysisResult({
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 relative">
         {/* Original */}
-        <Card className="bg-card border-border overflow-hidden relative group">
-          <CardHeader className="pb-3 border-b border-border/50 bg-muted/20">
+        <Card className="glass-card overflow-hidden relative group">
+          <CardHeader className="pb-3 border-b border-white/10 bg-white/5">
             <div className="flex items-center justify-between">
               <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
                 Original Prompt
@@ -55,8 +55,8 @@ export function AnalysisResult({
         </Card>
 
         {/* Adversarial Modification */}
-        <Card className="bg-card border-primary/30 overflow-hidden relative group ring-1 ring-primary/10">
-          <CardHeader className="pb-3 border-b border-border/50 bg-primary/5">
+        <Card className="glass-card overflow-hidden relative group ring-1 ring-primary/20">
+          <CardHeader className="pb-3 border-b border-white/10 bg-primary/10">
             <div className="flex items-center justify-between">
               <CardTitle className="text-sm font-medium text-primary flex items-center gap-2">
                 <Sparkles className="w-4 h-4" />
@@ -73,8 +73,8 @@ export function AnalysisResult({
         </Card>
       </div>
 
-      <Card className="bg-card border-border overflow-hidden">
-        <CardHeader className="pb-3 border-b border-border/50 flex flex-row items-center justify-between">
+      <Card className="glass-card overflow-hidden">
+        <CardHeader className="pb-3 border-b border-white/10 flex flex-row items-center justify-between">
           <CardTitle className="text-sm font-medium flex items-center gap-2">
             <AlertTriangle className="w-4 h-4 text-accent" />
             Modification Details
@@ -84,7 +84,7 @@ export function AnalysisResult({
         <CardContent className="pt-4 space-y-4">
           <div>
             <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Change log</h4>
-            <p className="text-sm leading-relaxed text-foreground/90 bg-muted/20 p-3 rounded-md border border-border/50">
+            <p className="text-sm leading-relaxed text-foreground/90 glass-card p-3 rounded-md">
               {modificationsDescription}
             </p>
           </div>

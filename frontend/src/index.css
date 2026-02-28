@@ -4,31 +4,100 @@
 
 @layer base {
   :root {
-    --background: 264 12% 12%;
-    --foreground: 0 0% 98%;
-    --card: 264 15% 15%;
-    --card-foreground: 0 0% 98%;
-    --popover: 264 15% 12%;
-    --popover-foreground: 0 0% 98%;
-    --primary: 262 70% 54%;
+    --background: 150 12% 10%;
+    --foreground: 140 8% 95%;
+    --card: 150 15% 13%;
+    --card-foreground: 140 8% 95%;
+    --popover: 150 15% 12%;
+    --popover-foreground: 140 8% 95%;
+    --primary: 142 65% 45%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 264 10% 20%;
-    --secondary-foreground: 0 0% 98%;
-    --muted: 264 10% 20%;
-    --muted-foreground: 264 5% 70%;
-    --accent: 222 100% 83%;
-    --accent-foreground: 264 12% 12%;
+    --secondary: 150 10% 18%;
+    --secondary-foreground: 140 8% 95%;
+    --muted: 150 10% 18%;
+    --muted-foreground: 145 8% 65%;
+    --accent: 165 55% 65%;
+    --accent-foreground: 150 12% 10%;
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 0 0% 98%;
-    --border: 264 10% 25%;
-    --input: 264 10% 25%;
-    --ring: 262 70% 54%;
+    --border: 150 10% 22%;
+    --input: 150 10% 22%;
+    --ring: 142 65% 45%;
     --radius: 0.75rem;
-    --chart-1: 262 70% 54%;
-    --chart-2: 222 100% 83%;
-    --chart-3: 197 37% 24%;
+    --chart-1: 142 65% 45%;
+    --chart-2: 165 55% 65%;
+    --chart-3: 85 45% 50%;
     --chart-4: 43 74% 66%;
     --chart-5: 27 87% 67%;
+  }
+}
+
+@keyframes gradientShift {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+@keyframes floatOrb1 {
+  0%, 100% {
+    transform: translate(0, 0) scale(1);
+    opacity: 0.2;
+  }
+  25% {
+    transform: translate(100px, -80px) scale(1.2);
+    opacity: 0.3;
+  }
+  50% {
+    transform: translate(50px, 100px) scale(0.9);
+    opacity: 0.15;
+  }
+  75% {
+    transform: translate(-60px, -50px) scale(1.1);
+    opacity: 0.25;
+  }
+}
+
+@keyframes floatOrb2 {
+  0%, 100% {
+    transform: translate(0, 0) scale(1);
+    opacity: 0.15;
+  }
+  33% {
+    transform: translate(-80px, 60px) scale(1.1);
+    opacity: 0.25;
+  }
+  66% {
+    transform: translate(70px, -90px) scale(0.95);
+    opacity: 0.2;
+  }
+}
+
+@keyframes floatOrb3 {
+  0%, 100% {
+    transform: translate(0, 0) scale(1);
+    opacity: 0.18;
+  }
+  20% {
+    transform: translate(60px, 70px) scale(1.05);
+    opacity: 0.28;
+  }
+  40% {
+    transform: translate(-90px, 40px) scale(0.9);
+    opacity: 0.15;
+  }
+  60% {
+    transform: translate(40px, -100px) scale(1.15);
+    opacity: 0.22;
+  }
+  80% {
+    transform: translate(-70px, -60px) scale(0.95);
+    opacity: 0.2;
   }
 }
 
@@ -38,13 +107,137 @@
   }
   body {
     @apply bg-background text-foreground font-body;
-    background-image: 
-      radial-gradient(at 0% 0%, hsla(262, 70%, 54%, 0.05) 0, transparent 50%),
-      radial-gradient(at 100% 100%, hsla(222, 100%, 83%, 0.05) 0, transparent 50%);
-    background-attachment: fixed;
+    background: linear-gradient(
+      135deg,
+      hsl(150, 12%, 10%) 0%,
+      hsl(155, 15%, 12%) 25%,
+      hsl(145, 10%, 11%) 50%,
+      hsl(160, 12%, 10%) 75%,
+      hsl(150, 12%, 10%) 100%
+    );
+    background-size: 400% 400%;
+    animation: gradientShift 20s ease infinite;
+    position: relative;
     margin: 0;
     min-height: 100vh;
+    overflow-x: hidden;
   }
+  
+  body::before {
+    content: '';
+    position: fixed;
+    top: -20%;
+    left: -15%;
+    width: 50%;
+    height: 50%;
+    background: radial-gradient(
+      circle,
+      hsla(142, 65%, 45%, 0.25) 0%,
+      hsla(142, 65%, 45%, 0.1) 30%,
+      transparent 70%
+    );
+    border-radius: 50%;
+    animation: floatOrb1 25s ease-in-out infinite;
+    pointer-events: none;
+    z-index: 0;
+    filter: blur(40px);
+  }
+  
+  body::after {
+    content: '';
+    position: fixed;
+    bottom: -10%;
+    right: -20%;
+    width: 55%;
+    height: 55%;
+    background: radial-gradient(
+      circle,
+      hsla(165, 55%, 65%, 0.2) 0%,
+      hsla(165, 55%, 65%, 0.08) 30%,
+      transparent 70%
+    );
+    border-radius: 50%;
+    animation: floatOrb2 28s ease-in-out infinite reverse;
+    pointer-events: none;
+    z-index: 0;
+    filter: blur(45px);
+  }
+  
+  #root {
+    position: relative;
+    z-index: 1;
+  }
+}
+
+.glass-container {
+  @apply backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl;
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.08) 0%,
+    rgba(255, 255, 255, 0.02) 100%
+  );
+  box-shadow: 
+    0 8px 32px rgba(31, 38, 135, 0.15),
+    inset 0 0 32px rgba(255, 255, 255, 0.05);
+  border-image: linear-gradient(
+    135deg,
+    rgba(66, 184, 131, 0.5),
+    rgba(102, 204, 153, 0.2)
+  ) 1;
+}
+
+.glass-card {
+  @apply backdrop-blur-md bg-white/10 border border-white/20 rounded-xl;
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.1) 0%,
+    rgba(255, 255, 255, 0.03) 100%
+  );
+  box-shadow: 
+    0 8px 32px rgba(31, 38, 135, 0.1),
+    inset 0 1px 2px rgba(255, 255, 255, 0.08);
+}
+
+.glass-input {
+  @apply backdrop-blur-sm bg-white/5 border border-white/10 rounded-lg;
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.06) 0%,
+    rgba(255, 255, 255, 0.01) 100%
+  );
+  box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.2);
+  transition: all 0.3s ease;
+}
+
+.glass-input:focus {
+  @apply border-white/30 bg-white/10;
+  box-shadow: 
+    inset 0 2px 8px rgba(0, 0, 0, 0.2),
+    0 0 20px rgba(66, 184, 131, 0.2);
+}
+
+.glass-button {
+  @apply backdrop-blur-sm bg-gradient-to-br from-white/10 to-white/5 border border-white/20 rounded-lg;
+  box-shadow: 
+    0 4px 16px rgba(31, 38, 135, 0.1),
+    inset 0 1px 2px rgba(255, 255, 255, 0.1);
+  transition: all 0.3s ease;
+}
+
+.glass-button:hover {
+  @apply border-white/30 bg-white/15;
+  box-shadow: 
+    0 8px 24px rgba(31, 38, 135, 0.15),
+    inset 0 1px 2px rgba(255, 255, 255, 0.2);
+}
+
+.floating-orb-bg {
+  position: fixed;
+  border-radius: 50%;
+  animation: floatOrb3 30s ease-in-out infinite;
+  pointer-events: none;
+  z-index: 0;
+  filter: blur(50px);
 }
 
 .font-code {
@@ -59,6 +252,11 @@
   background: transparent;
 }
 .technical-scroll::-webkit-scrollbar-thumb {
-  background: hsl(var(--border));
+  background: hsla(142, 65%, 45%, 0.5);
   border-radius: 3px;
+  backdrop-filter: blur(10px);
+}
+
+.technical-scroll::-webkit-scrollbar-thumb:hover {
+  background: hsla(142, 65%, 45%, 0.8);
 }

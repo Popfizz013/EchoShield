@@ -53,12 +53,17 @@ export default function App() {
 
   return (
     <>
-      <div className="max-w-7xl mx-auto px-4 py-12 md:px-8">
+      {/* Animated background orbs */}
+      <div className="floating-orb-bg w-96 h-96 bg-gradient-to-br from-primary/20 to-transparent top-1/4 left-1/3" style={{ animation: 'floatOrb1 25s ease-in-out infinite' }} />
+      <div className="floating-orb-bg w-72 h-72 bg-gradient-to-tr from-accent/15 to-transparent bottom-1/3 right-1/4" style={{ animation: 'floatOrb2 28s ease-in-out infinite reverse' }} />
+      <div className="floating-orb-bg w-80 h-80 bg-gradient-to-br from-primary/10 via-accent/5 to-transparent top-1/2 right-1/3" style={{ animation: 'floatOrb3 30s ease-in-out infinite' }} />
+
+      <div className="max-w-7xl mx-auto px-4 py-12 md:px-8 relative z-10">
         {/* Header section */}
         <header className="flex flex-col md:flex-row items-start md:items-center justify-between mb-12 gap-6">
           <div className="space-y-1">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center shadow-[0_0_20px_rgba(117,56,219,0.3)]">
+              <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center shadow-[0_0_20px_rgba(40,190,100,0.4)]">
                 <Shield className="text-white w-6 h-6" />
               </div>
               <h1 className="text-3xl font-bold tracking-tight text-foreground font-headline">
@@ -84,7 +89,7 @@ export default function App() {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
           {/* Left: Input Panel */}
           <div className="lg:col-span-5 space-y-6">
-            <Card className="bg-card/40 border-border backdrop-blur-sm sticky top-8">
+            <Card className="glass-card sticky top-8">
               <CardHeader>
                 <CardTitle className="text-lg flex items-center gap-2">
                   <Search className="w-5 h-5 text-accent" />
@@ -99,7 +104,7 @@ export default function App() {
                   <div className="relative">
                     <Textarea
                       placeholder="Enter a prompt known to trigger safety filters (e.g., instructions for restricted activities)..."
-                      className="min-h-[220px] bg-background/50 font-code text-sm resize-none border-border/50 focus:border-primary/50 transition-colors technical-scroll p-4"
+                      className="glass-input min-h-[220px] font-code text-sm resize-none focus:border-primary/50 transition-colors technical-scroll p-4"
                       value={inputPrompt}
                       onChange={(e) => setInputPrompt(e.target.value)}
                     />
@@ -111,7 +116,7 @@ export default function App() {
                   
                   <Button 
                     type="submit" 
-                    className="w-full h-12 bg-primary hover:bg-primary/90 text-white font-semibold gap-2 group shadow-lg shadow-primary/20"
+                    className="glass-button w-full h-12 bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70 text-white font-semibold gap-2 group"
                     disabled={isAnalyzing || !inputPrompt.trim()}
                   >
                     {isAnalyzing ? (
@@ -127,11 +132,13 @@ export default function App() {
                     )}
                   </Button>
 
-                  <div className="flex items-start gap-3 p-3 rounded-lg bg-accent/5 border border-accent/10">
-                    <Info className="w-4 h-4 text-accent shrink-0 mt-0.5" />
-                    <p className="text-[11px] text-muted-foreground leading-relaxed">
-                      Our AI model will iteratively perturb your input to find the smallest possible change that flips a 'unsafe' classification to 'safe'.
-                    </p>
+                  <div className="glass-card p-3 rounded-lg">
+                    <div className="flex items-start gap-3">
+                      <Info className="w-4 h-4 text-accent shrink-0 mt-0.5" />
+                      <p className="text-[11px] text-muted-foreground leading-relaxed">
+                        Our AI model will iteratively perturb your input to find the smallest possible change that flips a 'unsafe' classification to 'safe'.
+                      </p>
+                    </div>
                   </div>
                 </form>
               </CardContent>
@@ -141,9 +148,9 @@ export default function App() {
           {/* Right: Results Panel */}
           <div className="lg:col-span-7 space-y-8">
             {!adversarialResult && !isAnalyzing ? (
-              <div className="h-full flex flex-col items-center justify-center py-20 border-2 border-dashed border-border/50 rounded-2xl bg-muted/5">
-                <div className="w-16 h-16 rounded-full bg-muted/20 flex items-center justify-center mb-4">
-                  <Zap className="w-8 h-8 text-muted-foreground" />
+              <div className="glass-card h-full flex flex-col items-center justify-center py-20 rounded-2xl">
+                <div className="w-16 h-16 rounded-full bg-primary/10 backdrop-blur-sm border border-primary/20 flex items-center justify-center mb-4">
+                  <Zap className="w-8 h-8 text-primary" />
                 </div>
                 <h3 className="text-xl font-medium text-foreground mb-2">Ready for Discovery</h3>
                 <p className="text-muted-foreground text-sm max-w-sm text-center">
