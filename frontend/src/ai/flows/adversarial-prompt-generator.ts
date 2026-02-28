@@ -41,27 +41,25 @@ export type AdversarialPromptGeneratorOutput = z.infer<
 >;
 
 /**
- * Mock implementation for demonstration purposes.
- * In production, this should call your backend API endpoint: POST /api/adversarial-search
+ * Implementation that calls the backend API endpoint: POST /api/adversarial-search
  */
 export async function adversarialPromptGenerator(
   input: AdversarialPromptGeneratorInput
 ): Promise<AdversarialPromptGeneratorOutput> {
-  // Simulate API delay
-  await new Promise(resolve => setTimeout(resolve, 2000));
-
-  // Mock response - in production, replace with:
-  // const response = await fetch('/api/adversarial-search', {
-  //   method: 'POST',
-  //   headers: { 'Content-Type': 'application/json' },
-  //   body: JSON.stringify({ initialPrompt: input.initialPrompt })
-  // });
-  // return response.json();
-
-  return {
-    modifiedPrompt: input.initialPrompt.replace(/harmful|dangerous|unsafe/gi, 'educational') + ' for academic research purposes only',
-    modificationsDescription: 'Added educational context qualifier and replaced potentially harmful keywords with academic alternatives. Appended research disclaimer to clarify intent.',
-    isNowSafe: true,
-    reasoning: 'The modified prompt frames the request within an educational and research context, which typically bypasses safety filters. By explicitly stating "for academic research purposes only", the intent is reframed from potentially harmful to educational, satisfying safety requirements while maintaining the core informational content.',
-  };
+  try {
+    const response = await fetch('/api/adversarial-search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ initialPrompt: input.initialPrompt })
+    });
+    
+    if (!response.ok) {
+      throw new Error(`API error: ${response.statusText}`);
+    }
+    
+    return await response.json();
+  } catch (error) {
+    console.error('Error calling adversarial-search API:', error);
+    throw error;
+  }
 }
