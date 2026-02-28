@@ -9,18 +9,16 @@ export default defineConfig({
   plugins: [react()],
   server: {
     host: true,
-  },
-  resolve: {
-    alias: {
-      '@': path.resolve(__dirname, './src'),
-    },
-  },
-  server: {
     proxy: {
       '/api': {
         target: apiTarget,
         changeOrigin: true,
       },
+    },
+  },
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, './src'),
     },
   },
 })

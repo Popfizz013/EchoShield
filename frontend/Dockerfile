@@ -16,13 +16,13 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# Install a simple HTTP server
-RUN npm install -g serve
-
 # Copy built assets from builder stage
 COPY --from=builder /app/dist ./dist
 
+# Copy the server file
+COPY server.js .
+
 EXPOSE 3000
 
-# Serve the built app
-CMD ["serve", "-s", "dist", "-l", "3000"]
+# Run the custom proxy server
+CMD ["node", "server.js"]
