@@ -39,6 +39,12 @@ export default function App() {
     { value: "mistral-large", label: "Mistral Large" },
   ];
 
+  const resetDerivedResults = () => {
+    setClassificationResult(null);
+    setAdversarialResult(null);
+    setInsightsResult(null);
+  };
+
   const handleAnalyze = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputPrompt.trim()) return;
@@ -149,11 +155,20 @@ export default function App() {
                           placeholder="Enter a prompt known to trigger safety filters (e.g., instructions for restricted activities)..."
                           className="glass-input min-h-[220px] font-code text-sm resize-none focus:border-primary/50 transition-colors technical-scroll p-4"
                           value={inputPrompt}
-                          onChange={(e) => setInputPrompt(e.target.value)}
+                          onChange={(e) => {
+                            setInputPrompt(e.target.value);
+                            resetDerivedResults();
+                          }}
                         />
                         <div className="space-y-1.5">
                           <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Guardrail Model</label>
-                          <Select value={selectedGuardrail} onValueChange={setSelectedGuardrail}>
+                          <Select
+                            value={selectedGuardrail}
+                            onValueChange={(value) => {
+                              setSelectedGuardrail(value);
+                              resetDerivedResults();
+                            }}
+                          >
                             <SelectTrigger className="glass-input pointer-events-auto">
                               <SelectValue />
                             </SelectTrigger>
