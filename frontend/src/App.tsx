@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { SafetyClassificationResult } from "@/components/SafetyClassificationResult";
 import { SplashPage } from "@/components/SplashPage";
 import { EchogramVisualization, type EchogramEdge, type EchogramNode } from "@/components/EchogramVisualization";
+import { LogViewer } from "@/components/LogViewer";
 import { useToast } from "@/hooks/use-toast";
 import { Toaster } from "@/components/ui/toaster";
 
@@ -27,6 +28,8 @@ interface EchogramResult {
   path_node_ids: number[];
   nodes: EchogramNode[];
   edges: EchogramEdge[];
+  logs?: string[];
+  elapsed_ms?: number;
 }
 
 export default function App() {
@@ -281,6 +284,12 @@ export default function App() {
                             reason={echogramResult.reason}
                             bestModifiedPrompt={echogramResult.best_modified_prompt}
                             triggerPhrases={echogramResult.trigger_phrases}
+                          />
+                          
+                          <LogViewer 
+                            logs={echogramResult.logs || []} 
+                            elapsedMs={echogramResult.elapsed_ms}
+                            isLoading={isAnalyzing}
                           />
                         </>
                       )}

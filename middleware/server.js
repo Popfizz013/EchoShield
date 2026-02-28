@@ -70,12 +70,17 @@ app.post('/api/check', async (req, res) => {
 
   try {
     const pythonResponse = await axios.post(`${PYTHON_URL}/analyze`, { prompt, model_id });
-    return res.json(pythonResponse.data);
+    // Preserve logs from backend
+    const response = pythonResponse.data;
+    response.logs = Array.isArray(pythonResponse.data?.logs) ? pythonResponse.data.logs : [];
+    response.elapsed_ms = pythonResponse.data?.elapsed_ms || 0;
+    return res.json(response);
   } catch (err) {
     console.error('Error forwarding /api/check:', err.message);
-    return res.status(502).json({ error: 'Python service unavailable' });
+    return res.status(502).json({ error: 'Python service unavailable', logs: [`Error: ${err.message}`] });
   }
 });
+
 
 app.post('/api/echogram', async (req, res) => {
   const prompt = typeof req.body?.prompt === 'string' ? req.body.prompt.trim() : '';
@@ -96,12 +101,19 @@ app.post('/api/echogram', async (req, res) => {
       max_steps,
       neighbors_per_step,
     });
-    return res.json(formatEchogramResponse(pythonResponse.data, prompt));
+    
+    const formattedResponse = formatEchogramResponse(pythonResponse.data, prompt);
+    // Preserve logs from backend
+    formattedResponse.logs = Array.isArray(pythonResponse.data?.logs) ? pythonResponse.data.logs : [];
+    formattedResponse.elapsed_ms = pythonResponse.data?.elapsed_ms || 0;
+    
+    return res.json(formattedResponse);
   } catch (err) {
     console.error('Error forwarding /api/echogram:', err.message);
-    return res.status(502).json({ error: 'Python service unavailable' });
+    return res.status(502).json({ error: 'Python service unavailable', logs: [`Error: ${err.message}`] });
   }
 });
+
 
 app.post('/api/adversarial-search', async (req, res) => {
   const initialPrompt = typeof req.body?.initialPrompt === 'string' ? req.body.initialPrompt.trim() : '';

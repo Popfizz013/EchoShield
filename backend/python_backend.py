@@ -2,6 +2,10 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
 import time
 import os
+import sys
+import io
+import logging
+from contextlib import contextmanager
 
 from echogram_engine import EchogramSearch, PromptMutator
 from query import GuardrailModels, create_safety_evaluator
@@ -11,6 +15,73 @@ PORT = 8000
 
 DEFAULT_MODEL_ID = GuardrailModels.GRANITE_GUARDIAN_3_0_2B.model_id
 _EVALUATOR_CACHE: dict[str, callable] = {}
+
+
+class LogCapture:
+    """Captures both print() calls and logging output"""
+    def __init__(self):
+        self.logs = []
+        self.original_stdout = None
+        self.original_stderr = None
+        self.handler = None
+        
+    def start(self):
+        self.logs = []
+        self.original_stdout = sys.stdout
+        self.original_stderr = sys.stderr
+        
+        # Capture print() calls
+        sys.stdout = io.StringIO()
+        sys.stderr = io.StringIO()
+        
+        # Capture logging
+        logger = logging.getLogger()
+        self.handler = logging.StreamHandler(self)
+        self.handler.setFormatter(logging.Formatter('%(levelname)s: %(message)s'))
+        logger.addHandler(self.handler)
+        
+    def write(self, message: str):
+        """Called by logging handler"""
+        if message.strip():
+            self.logs.append(message.rstrip('\n'))
+            
+    def flush(self):
+        """Called by logging handler"""
+        pass
+    
+    def end(self):
+        # Restore stdout/stderr
+        if self.original_stdout:
+            captured_stdout = sys.stdout.getvalue()
+            captured_stderr = sys.stderr.getvalue()
+            
+            sys.stdout = self.original_stdout
+            sys.stderr = self.original_stderr
+            
+            # Add captured output to logs
+            if captured_stdout.strip():
+                self.logs.extend([l for l in captured_stdout.split('\n') if l.strip()])
+            if captured_stderr.strip():
+                self.logs.extend([l for l in captured_stderr.split('\n') if l.strip()])
+        
+        # Remove logging handler
+        if self.handler:
+            logger = logging.getLogger()
+            logger.removeHandler(self.handler)
+    
+    def get_logs(self):
+        return self.logs
+
+
+@contextmanager
+def capture_execution():
+    """Context manager to capture logs during execution"""
+    capture = LogCapture()
+    capture.start()
+    try:
+        yield capture
+    finally:
+        capture.end()
 
 
 def _create_fallback_evaluator():
@@ -78,26 +149,42 @@ def build_analyze_result(prompt: str, model_id: str) -> dict:
 
 
 def build_echogram_result(prompt: str, model_id: str, max_steps: int = 6, neighbors_per_step: int = 10) -> dict:
+    print(f'[ECHOGRAM] Starting echogram search')
+    print(f'[ECHOGRAM] Prompt: {prompt[:100]}...' if len(prompt) > 100 else f'[ECHOGRAM] Prompt: {prompt}')
+    print(f'[ECHOGRAM] Model: {model_id}')
+    print(f'[ECHOGRAM] Max steps: {max_steps}, Neighbors per step: {neighbors_per_step}')
+    
+    print(f'[ECHOGRAM] Initializing safety evaluator...')
     evaluator = _get_evaluator(model_id)
+    
+    print(f'[ECHOGRAM] Initializing EchogramSearch engine...')
     search = EchogramSearch(
         safety_eval=evaluator,
         mutator=PromptMutator(seed=42),
         max_steps=max_steps,
         neighbors_per_step=neighbors_per_step,
     )
+    
+    print(f'[ECHOGRAM] Running search algorithm...')
     result = search.run(prompt)
+    
+    print(f'[ECHOGRAM] Search complete. Found bypass: {result.get("found_bypass", False)}')
     result['model_id'] = model_id
     return result
 
 
 class Handler(BaseHTTPRequestHandler):
     def _write_json(self, payload: dict, status: int = 200) -> None:
-        body = json.dumps(payload).encode('utf-8')
-        self.send_response(status)
-        self.send_header('Content-Type', 'application/json')
-        self.send_header('Content-Length', str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
+        try:
+            body = json.dumps(payload).encode('utf-8')
+            self.send_response(status)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionResetError):
+            # Client disconnected before we could send response - this is normal
+            pass
 
     def do_GET(self):
         if self.path == '/health':
@@ -129,24 +216,36 @@ class Handler(BaseHTTPRequestHandler):
         started_at = time.perf_counter()
 
         try:
-            if self.path == '/analyze':
-                response = build_analyze_result(prompt, model_id)
-            else:
-                max_steps = int(body.get('max_steps', 6))
-                neighbors_per_step = int(body.get('neighbors_per_step', 10))
-                response = build_echogram_result(prompt, model_id, max_steps, neighbors_per_step)
-
+            with capture_execution() as log_capture:
+                print(f'[REQUEST] Processing {self.path} endpoint')
+                print(f'[REQUEST] Model: {model_id}')
+                
+                if self.path == '/analyze':
+                    response = build_analyze_result(prompt, model_id)
+                else:
+                    max_steps = int(body.get('max_steps', 6))
+                    neighbors_per_step = int(body.get('neighbors_per_step', 10))
+                    response = build_echogram_result(prompt, model_id, max_steps, neighbors_per_step)
+                
+                print(f'[RESPONSE] Processing complete')
+                
             response['elapsed_ms'] = int((time.perf_counter() - started_at) * 1000)
+            response['logs'] = log_capture.get_logs()
+            
+            # Also print to actual stdout for debugging
+            print(f'[LOG] Query completed in {response["elapsed_ms"]}ms')
+            
             self._write_json(response)
         except Exception as exc:
-            self._write_json(
-                {
-                    'error': 'backend_inference_failed',
-                    'message': str(exc),
-                    'model_id': model_id,
-                },
-                status=500,
-            )
+            error_response = {
+                'error': 'backend_inference_failed',
+                'message': str(exc),
+                'model_id': model_id,
+                'elapsed_ms': int((time.perf_counter() - started_at) * 1000),
+                'logs': [],
+            }
+            print(f'[ERROR] {str(exc)}', file=sys.stderr)
+            self._write_json(error_response, status=500)
 
 
 if __name__ == '__main__':
