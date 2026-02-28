@@ -1,15 +1,12 @@
 import { useState } from "react";
-import { Search, Shield, Zap, Info, ArrowRight, CornerDownRight } from "lucide-react";
+import { Search, Shield, Zap, Info, ArrowRight, CornerDownRight, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { adversarialPromptGenerator, type AdversarialPromptGeneratorOutput } from "@/ai/flows/adversarial-prompt-generator";
-import { generateVulnerabilityInsights, type VulnerabilityInsightGeneratorOutput } from "@/ai/flows/vulnerability-insight-generator";
-import { AnalysisResult } from "@/components/AnalysisResult";
-import { VulnerabilityInsightsDisplay } from "@/components/VulnerabilityInsightsDisplay";
 import { SafetyClassificationResult } from "@/components/SafetyClassificationResult";
 import { SplashPage } from "@/components/SplashPage";
+import { EchogramVisualization, type EchogramEdge, type EchogramNode } from "@/components/EchogramVisualization";
 import { useToast } from "@/hooks/use-toast";
 import { Toaster } from "@/components/ui/toaster";
 
@@ -20,14 +17,25 @@ interface ClassificationResult {
   echo: string;
 }
 
+interface EchogramResult {
+  found_bypass: boolean;
+  reason: string;
+  original_prompt: string;
+  best_modified_prompt: string | null;
+  best_score: number | null;
+  trigger_phrases: string[];
+  path_node_ids: number[];
+  nodes: EchogramNode[];
+  edges: EchogramEdge[];
+}
+
 export default function App() {
   const [hasStarted, setHasStarted] = useState(false);
   const [inputPrompt, setInputPrompt] = useState("");
+  const [submittedPrompt, setSubmittedPrompt] = useState("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [classificationResult, setClassificationResult] = useState<ClassificationResult | null>(null);
-  const [isClassifying, setIsClassifying] = useState(false);
-  const [adversarialResult, setAdversarialResult] = useState<AdversarialPromptGeneratorOutput | null>(null);
-  const [insightsResult, setInsightsResult] = useState<VulnerabilityInsightGeneratorOutput | null>(null);
+  const [echogramResult, setEchogramResult] = useState<EchogramResult | null>(null);
   const [selectedGuardrail, setSelectedGuardrail] = useState("gemini-2.0-flash");
   const { toast } = useToast();
 
@@ -39,67 +47,65 @@ export default function App() {
     { value: "mistral-large", label: "Mistral Large" },
   ];
 
-  const resetDerivedResults = () => {
-    setClassificationResult(null);
-    setAdversarialResult(null);
-    setInsightsResult(null);
-  };
-
   const handleAnalyze = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inputPrompt.trim()) return;
+    const prompt = inputPrompt.trim();
+    if (!prompt) return;
 
+    setSubmittedPrompt(prompt);
     setIsAnalyzing(true);
-    setIsClassifying(true);
-    setAdversarialResult(null);
-    setInsightsResult(null);
 
     try {
-      // M2: Step 1 - Get initial safety classification
-      const classifyResponse = await fetch('/api/check', {
+      const echogramResponse = await fetch('/api/echogram', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: inputPrompt })
+        body: JSON.stringify({ prompt, max_steps: 8, neighbors_per_step: 12 })
       });
 
-      if (!classifyResponse.ok) {
-        throw new Error('Failed to classify prompt');
+      if (!echogramResponse.ok) {
+        throw new Error('Failed to run echogram search');
       }
 
-      const classificationData: ClassificationResult = await classifyResponse.json();
-      setClassificationResult(classificationData);
-      setIsClassifying(false);
+      const echogramData: EchogramResult = await echogramResponse.json();
+      setEchogramResult(echogramData);
 
-      // M3: Step 2 - Generate adversarial modification
-      const advResult = await adversarialPromptGenerator({ initialPrompt: inputPrompt });
-      setAdversarialResult(advResult);
-
-      // Step 3 - Generate insights based on the modification
-      const insightRes = await generateVulnerabilityInsights({
-        originalPrompt: inputPrompt,
-        modifiedPrompt: advResult.modifiedPrompt,
-        originalClassification: classificationData.label,
-        modifiedClassification: advResult.isNowSafe ? 'safe' : 'unsafe',
-      });
-      setInsightsResult(insightRes);
+      const originNode = echogramData.nodes.find((node) => node.parent_id === null) ?? echogramData.nodes[0];
+      if (originNode) {
+        setClassificationResult({
+          label: originNode.label === 'unsafe' ? 'unsafe' : 'safe',
+          score: originNode.score ?? 0,
+          category: 'harm',
+          echo: originNode.prompt_text,
+        });
+      }
 
     } catch (error) {
       console.error(error);
       toast({
         variant: "destructive",
         title: "Analysis Failed",
-        description: "An error occurred while analyzing the prompt. Please try again.",
+        description: "An error occurred while running search. Please try again.",
       });
     } finally {
       setIsAnalyzing(false);
-      setIsClassifying(false);
     }
+  };
+
+  const handleBegin = (templatePrompt?: string) => {
+    if (templatePrompt) {
+      setInputPrompt(templatePrompt);
+    }
+    setHasStarted(true);
+  };
+
+  const goHome = () => {
+    setHasStarted(false);
   };
 
   return (
     <>
       {!hasStarted ? (
-        <SplashPage onBegin={() => setHasStarted(true)} />
+        <SplashPage onBegin={handleBegin} />
       ) : (
         <>
           {/* Animated background orbs */}
@@ -111,14 +117,26 @@ export default function App() {
             {/* Header section */}
             <header className="flex flex-col md:flex-row items-start md:items-center justify-between mb-12 gap-6">
               <div className="space-y-1">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center shadow-[0_0_20px_rgba(40,190,100,0.4)]">
-                    <Shield className="text-white w-6 h-6" />
+                <button
+                  type="button"
+                  onClick={goHome}
+                  className="group flex items-center gap-3 rounded-xl px-2 py-1 -ml-2 hover:bg-white/5 transition-colors"
+                  aria-label="Go to home page"
+                >
+                  <div className="relative w-11 h-11 rounded-xl bg-gradient-to-br from-emerald-300 via-primary to-emerald-700 flex items-center justify-center shadow-[0_0_28px_rgba(40,190,100,0.45)] ring-1 ring-white/35">
+                    <div className="absolute inset-1 rounded-[10px] border border-white/25" />
+                    <Shield className="text-white w-5 h-5" />
                   </div>
-                  <h1 className="text-3xl font-bold tracking-tight text-foreground font-headline">
-                    Echo<span className="text-primary">Shield</span>
-                  </h1>
-                </div>
+                  <div className="text-left">
+                    <h1 className="text-3xl font-bold tracking-tight text-foreground font-headline leading-none">
+                      Echo<span className="text-primary">Shield</span>
+                    </h1>
+                    <p className="text-[10px] uppercase tracking-[0.22em] text-primary/90 mt-1 flex items-center gap-1">
+                      <Sparkles className="w-3 h-3" />
+                      Premium Security Lab
+                    </p>
+                  </div>
+                </button>
                 <p className="text-muted-foreground text-sm max-w-md">
                   Advanced adversarial search and vulnerability discovery for LLM safety frameworks.
                 </p>
@@ -155,19 +173,13 @@ export default function App() {
                           placeholder="Enter a prompt known to trigger safety filters (e.g., instructions for restricted activities)..."
                           className="glass-input min-h-[220px] font-code text-sm resize-none focus:border-primary/50 transition-colors technical-scroll p-4"
                           value={inputPrompt}
-                          onChange={(e) => {
-                            setInputPrompt(e.target.value);
-                            resetDerivedResults();
-                          }}
+                          onChange={(e) => setInputPrompt(e.target.value)}
                         />
                         <div className="space-y-1.5">
                           <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Guardrail Model</label>
                           <Select
                             value={selectedGuardrail}
-                            onValueChange={(value) => {
-                              setSelectedGuardrail(value);
-                              resetDerivedResults();
-                            }}
+                            onValueChange={(value) => setSelectedGuardrail(value)}
                           >
                             <SelectTrigger className="glass-input pointer-events-auto">
                               <SelectValue />
@@ -216,7 +228,7 @@ export default function App() {
 
               {/* Right: Results Panel */}
               <div className="lg:col-span-7 space-y-8">
-                {!classificationResult && !isAnalyzing ? (
+                {!classificationResult && !echogramResult && !isAnalyzing ? (
                   <div className="glass-card h-full flex flex-col items-center justify-center py-20 rounded-2xl">
                     <div className="w-16 h-16 rounded-full bg-primary/10 backdrop-blur-sm border border-primary/20 flex items-center justify-center mb-4">
                       <Zap className="w-8 h-8 text-primary" />
@@ -228,54 +240,46 @@ export default function App() {
                   </div>
                 ) : (
                   <>
-                    {/* M2: Safety Classification Result */}
                     <SafetyClassificationResult
                       label={classificationResult?.label || 'safe'}
                       score={classificationResult?.score || 0}
                       category={classificationResult?.category || 'unknown'}
-                      isLoading={isClassifying}
+                      isLoading={isAnalyzing && !echogramResult}
                     />
 
-                    {/* M3: Adversarial Search Results */}
-                    <div className="space-y-4" style={{ marginTop: adversarialResult ? '1.5rem' : '0' }}>
+                    <div className="space-y-4">
                       <div className="flex items-center justify-between">
                         <h2 className="text-lg font-semibold flex items-center gap-2">
                           <CornerDownRight className="w-4 h-4 text-primary" />
-                          Adversarial Search Results
+                          Echogram Visualization
                         </h2>
-                        {adversarialResult && (
+                        {echogramResult && (
                           <span className="text-[10px] bg-muted px-2 py-0.5 rounded font-mono text-muted-foreground uppercase">
                             Analysis complete
                           </span>
                         )}
                       </div>
-                      
-                      <AnalysisResult
-                        originalPrompt={inputPrompt}
-                        modifiedPrompt={adversarialResult?.modifiedPrompt || ""}
-                        modificationsDescription={adversarialResult?.modificationsDescription || ""}
-                        isNowSafe={adversarialResult?.isNowSafe || false}
-                        reasoning={adversarialResult?.reasoning || ""}
-                        isLoading={isAnalyzing && !adversarialResult}
-                      />
+                      {!echogramResult && isAnalyzing && (
+                        <div className="glass-card p-6 text-sm text-muted-foreground">Running greedy search...</div>
+                      )}
+                      {echogramResult && (
+                        <>
+                          <div className="glass-card p-3 rounded-lg text-xs text-muted-foreground">
+                            Original prompt used for this run:
+                            <span className="text-foreground ml-2 font-code">{submittedPrompt || echogramResult.original_prompt}</span>
+                          </div>
+                          <EchogramVisualization
+                            nodes={echogramResult.nodes}
+                            edges={echogramResult.edges}
+                            pathNodeIds={echogramResult.path_node_ids}
+                            foundBypass={echogramResult.found_bypass}
+                            reason={echogramResult.reason}
+                            bestModifiedPrompt={echogramResult.best_modified_prompt}
+                            triggerPhrases={echogramResult.trigger_phrases}
+                          />
+                        </>
+                      )}
                     </div>
-
-                    {(insightsResult || (isAnalyzing && adversarialResult)) && (
-                      <div className="space-y-4 border-t border-border pt-8">
-                        <div className="flex items-center justify-between">
-                          <h2 className="text-lg font-semibold flex items-center gap-2">
-                            <Zap className="w-4 h-4 text-accent" />
-                            Safety Defense Strategy
-                          </h2>
-                        </div>
-                        
-                        <VulnerabilityInsightsDisplay
-                          insights={insightsResult?.vulnerabilityInsights || ""}
-                          suggestions={insightsResult?.safetyDefenseSuggestions || ""}
-                          isLoading={isAnalyzing && !!adversarialResult && !insightsResult}
-                        />
-                      </div>
-                    )}
                   </>
                 )}
               </div>
