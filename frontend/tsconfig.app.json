@@ -28,5 +28,6 @@
       "@/*": ["./src/*"]
     }
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": ["src/ai/dev.ts", "src/ai/genkit.ts"]
 }

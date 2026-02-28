@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Search, Shield, Zap, Info, ArrowRight, CornerDownRight, ChevronDown } from "lucide-react";
+import { Search, Shield, Zap, Info, ArrowRight, CornerDownRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
