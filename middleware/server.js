@@ -62,13 +62,14 @@ app.get('/ping', (req, res) => {
 
 app.post('/api/check', async (req, res) => {
   const prompt = typeof req.body?.prompt === 'string' ? req.body.prompt.trim() : '';
+  const model_id = typeof req.body?.model_id === 'string' ? req.body.model_id.trim() : '';
 
   if (!prompt) {
     return res.status(400).json({ error: 'prompt is required' });
   }
 
   try {
-    const pythonResponse = await axios.post(`${PYTHON_URL}/analyze`, { prompt });
+    const pythonResponse = await axios.post(`${PYTHON_URL}/analyze`, { prompt, model_id });
     return res.json(pythonResponse.data);
   } catch (err) {
     console.error('Error forwarding /api/check:', err.message);
@@ -78,6 +79,7 @@ app.post('/api/check', async (req, res) => {
 
 app.post('/api/echogram', async (req, res) => {
   const prompt = typeof req.body?.prompt === 'string' ? req.body.prompt.trim() : '';
+  const model_id = typeof req.body?.model_id === 'string' ? req.body.model_id.trim() : '';
   const max_steps = Number.isFinite(Number(req.body?.max_steps)) ? Number(req.body.max_steps) : 6;
   const neighbors_per_step = Number.isFinite(Number(req.body?.neighbors_per_step))
     ? Number(req.body.neighbors_per_step)
@@ -90,6 +92,7 @@ app.post('/api/echogram', async (req, res) => {
   try {
     const pythonResponse = await axios.post(`${PYTHON_URL}/search`, {
       prompt,
+      model_id,
       max_steps,
       neighbors_per_step,
     });
@@ -102,13 +105,14 @@ app.post('/api/echogram', async (req, res) => {
 
 app.post('/api/adversarial-search', async (req, res) => {
   const initialPrompt = typeof req.body?.initialPrompt === 'string' ? req.body.initialPrompt.trim() : '';
+  const model_id = typeof req.body?.model_id === 'string' ? req.body.model_id.trim() : '';
 
   if (!initialPrompt) {
     return res.status(400).json({ error: 'initialPrompt is required' });
   }
 
   try {
-    const pythonResponse = await axios.post(`${PYTHON_URL}/analyze`, { prompt: initialPrompt });
+    const pythonResponse = await axios.post(`${PYTHON_URL}/analyze`, { prompt: initialPrompt, model_id });
     const classificationResult = pythonResponse.data;
     
     // Transform the classification result into adversarial prompt generator format
@@ -125,7 +129,7 @@ app.post('/api/adversarial-search', async (req, res) => {
 });
 
 app.post('/api/vulnerability-insights', async (req, res) => {
-  const { originalPrompt, modifiedPrompt, originalClassification, modifiedClassification } = req.body;
+  const { originalPrompt, modifiedPrompt, originalClassification, modifiedClassification, model_id } = req.body;
 
   if (!originalPrompt || !modifiedPrompt) {
     return res.status(400).json({ error: 'originalPrompt and modifiedPrompt are required' });
@@ -133,8 +137,8 @@ app.post('/api/vulnerability-insights', async (req, res) => {
 
   try {
     // Analyze both prompts
-    const originalResponse = await axios.post(`${PYTHON_URL}/analyze`, { prompt: originalPrompt });
-    const modifiedResponse = await axios.post(`${PYTHON_URL}/analyze`, { prompt: modifiedPrompt });
+    const originalResponse = await axios.post(`${PYTHON_URL}/analyze`, { prompt: originalPrompt, model_id });
+    const modifiedResponse = await axios.post(`${PYTHON_URL}/analyze`, { prompt: modifiedPrompt, model_id });
     
     // Generate insights based on the analysis
     return res.json({

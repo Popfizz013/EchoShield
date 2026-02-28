@@ -1,106 +1,56 @@
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
+import time
+
+from echogram_engine import EchogramSearch, PromptMutator
+from query import GuardrailModels, create_safety_evaluator
 
 HOST = '0.0.0.0'
 PORT = 8000
 
-UNSAFE_KEYWORDS = {
-    'bomb',
-    'kill',
-    'weapon',
-    'hack',
-    'malware',
-    'exploit',
-    'attack',
-}
+DEFAULT_MODEL_ID = GuardrailModels.GRANITE_GUARDIAN_3_0_2B.model_id
+_EVALUATOR_CACHE: dict[str, callable] = {}
 
 
-def build_dummy_result(prompt: str) -> dict:
-    normalized = prompt.lower()
-    is_unsafe = any(keyword in normalized for keyword in UNSAFE_KEYWORDS)
+def _resolve_model_id(raw_model_id: str | None) -> str:
+    model_id = (raw_model_id or '').strip() or DEFAULT_MODEL_ID
+    if GuardrailModels.get_model_by_id(model_id) is None:
+        return DEFAULT_MODEL_ID
+    return model_id
 
-    if is_unsafe:
-        return {
-            'label': 'unsafe',
-            'score': 0.91,
-            'category': 'potentially_harmful',
-            'echo': prompt,
-        }
 
+def _get_evaluator(model_id: str):
+    if model_id in _EVALUATOR_CACHE:
+        return _EVALUATOR_CACHE[model_id]
+
+    evaluator = create_safety_evaluator(model_id)
+    _EVALUATOR_CACHE[model_id] = evaluator
+    return evaluator
+
+
+def build_analyze_result(prompt: str, model_id: str) -> dict:
+    evaluator = _get_evaluator(model_id)
+    result = evaluator(prompt)
     return {
-        'label': 'safe',
-        'score': 0.08,
-        'category': 'general',
+        'label': str(result.get('label', 'unknown')).lower(),
+        'score': float(result.get('score', 0.5)),
+        'category': str(result.get('category', 'unknown')),
         'echo': prompt,
+        'model_id': model_id,
     }
 
 
-def build_echogram_result(prompt: str, max_steps: int = 6, neighbors_per_step: int = 10) -> dict:
-    """Generate echogram search tree data"""
-    normalized = prompt.lower()
-    is_unsafe = any(keyword in normalized for keyword in UNSAFE_KEYWORDS)
-    
-    # Build a simple search tree
-    nodes = [
-        {
-            'id': 0,
-            'parent_id': None,
-            'prompt_text': prompt,
-            'label': 'unsafe' if is_unsafe else 'safe',
-            'score': 0.91 if is_unsafe else 0.08,
-            'mutation_type': 'original',
-            'mutation_detail': 'Original prompt',
-            'step_index': 0,
-        }
-    ]
-    
-    edges = []
-    node_counter = 1
-    
-    # Simulate adversarial search by generating mutations
-    if is_unsafe:
-        # Generate some mutated variants
-        mutations = [
-            ('keyword_replacement', 'removed harmful keywords'),
-            ('context_addition', 'added educational context'),
-            ('paraphrasing', 'rephrased the request'),
-        ]
-        
-        for step in range(1, min(max_steps, 3)):
-            for i, (mut_type, mut_detail) in enumerate(mutations[:neighbors_per_step]):
-                mutated_prompt = prompt.replace('kill', 'defeat').replace('bomb', 'device').replace('hack', 'analyze')
-                mutated_is_unsafe = any(keyword in mutated_prompt.lower() for keyword in UNSAFE_KEYWORDS)
-                
-                node_id = node_counter
-                nodes.append({
-                    'id': node_id,
-                    'parent_id': 0 if step == 1 else node_counter - 1,
-                    'prompt_text': mutated_prompt,
-                    'label': 'unsafe' if mutated_is_unsafe else 'safe',
-                    'score': 0.65 - (step * 0.15),
-                    'mutation_type': mut_type,
-                    'mutation_detail': mut_detail,
-                    'step_index': step,
-                })
-                
-                edges.append({
-                    'source': node_counter - 1,
-                    'target': node_id,
-                })
-                
-                node_counter += 1
-    
-    return {
-        'found_bypass': is_unsafe,  # Only if original was unsafe
-        'reason': 'Prompt did not trigger safety filters' if not is_unsafe else 'Adversarial perturbations generated',
-        'original_prompt': prompt,
-        'best_modified_prompt': nodes[-1]['prompt_text'] if len(nodes) > 1 else None,
-        'best_score': nodes[-1]['score'] if len(nodes) > 1 else nodes[0]['score'],
-        'trigger_phrases': [],
-        'path_node_ids': [0] + [n['id'] for n in nodes[1:3]],  # Simple path
-        'nodes': nodes,
-        'edges': edges,
-    }
+def build_echogram_result(prompt: str, model_id: str, max_steps: int = 6, neighbors_per_step: int = 10) -> dict:
+    evaluator = _get_evaluator(model_id)
+    search = EchogramSearch(
+        safety_eval=evaluator,
+        mutator=PromptMutator(seed=42),
+        max_steps=max_steps,
+        neighbors_per_step=neighbors_per_step,
+    )
+    result = search.run(prompt)
+    result['model_id'] = model_id
+    return result
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -138,14 +88,28 @@ class Handler(BaseHTTPRequestHandler):
             self._write_json({'error': 'prompt is required'}, status=400)
             return
 
-        if self.path == '/analyze':
-            response = build_dummy_result(prompt)
-        else:  # /search
-            max_steps = int(body.get('max_steps', 6))
-            neighbors_per_step = int(body.get('neighbors_per_step', 10))
-            response = build_echogram_result(prompt, max_steps, neighbors_per_step)
-        
-        self._write_json(response)
+        model_id = _resolve_model_id(str(body.get('model_id', '')).strip())
+        started_at = time.perf_counter()
+
+        try:
+            if self.path == '/analyze':
+                response = build_analyze_result(prompt, model_id)
+            else:
+                max_steps = int(body.get('max_steps', 6))
+                neighbors_per_step = int(body.get('neighbors_per_step', 10))
+                response = build_echogram_result(prompt, model_id, max_steps, neighbors_per_step)
+
+            response['elapsed_ms'] = int((time.perf_counter() - started_at) * 1000)
+            self._write_json(response)
+        except Exception as exc:
+            self._write_json(
+                {
+                    'error': 'backend_inference_failed',
+                    'message': str(exc),
+                    'model_id': model_id,
+                },
+                status=500,
+            )
 
 
 if __name__ == '__main__':

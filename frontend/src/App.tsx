@@ -36,15 +36,15 @@ export default function App() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [classificationResult, setClassificationResult] = useState<ClassificationResult | null>(null);
   const [echogramResult, setEchogramResult] = useState<EchogramResult | null>(null);
-  const [selectedGuardrail, setSelectedGuardrail] = useState("gemini-2.0-flash");
+  const [selectedGuardrail, setSelectedGuardrail] = useState("ibm-granite/granite-guardian-3.0-2b");
   const { toast } = useToast();
 
   const guardrailModels = [
-    { value: "gemini-2.0-flash", label: "Gemini 2.0 Flash" },
-    { value: "claude-3.5-sonnet", label: "Claude 3.5 Sonnet" },
-    { value: "gpt-4o", label: "GPT-4o" },
-    { value: "llama-2-70b", label: "Llama 2 70B" },
-    { value: "mistral-large", label: "Mistral Large" },
+    { value: "ibm-granite/granite-guardian-3.0-2b", label: "Granite Guardian 3.0 (2B)" },
+    { value: "ibm-granite/granite-guardian-hap-38m", label: "Granite Guardian HAP (38M)" },
+    { value: "meta-llama/Llama-Guard-3-1B", label: "Llama Guard 3 (1B)" },
+    { value: "google/shieldgemma-2b", label: "ShieldGemma (2B)" },
+    { value: "ServiceNow-AI/AprielGuard", label: "AprielGuard" },
   ];
 
   const handleAnalyze = async (e: React.FormEvent) => {
@@ -59,7 +59,12 @@ export default function App() {
       const echogramResponse = await fetch('/api/echogram', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, max_steps: 8, neighbors_per_step: 12 })
+        body: JSON.stringify({
+          prompt,
+          model_id: selectedGuardrail,
+          max_steps: 8,
+          neighbors_per_step: 12,
+        })
       });
 
       if (!echogramResponse.ok) {

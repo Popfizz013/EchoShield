@@ -5,10 +5,10 @@ Provides unified interface for querying various safety guardrail models
 
 import os
 import requests
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 from dataclasses import dataclass
 from enum import Enum
-import json
+from pathlib import Path
 
 
 class ModelProvider(Enum):
@@ -62,6 +62,15 @@ class GuardrailModels:
     )
     
     # IBM Granite Guardian Family
+    GRANITE_GUARDIAN_3_0_2B = ModelConfig(
+        model_id="ibm-granite/granite-guardian-3.0-2b",
+        provider=ModelProvider.IBM,
+        display_name="Granite Guardian 3.0 (2B)",
+        description="General harm and dangerous request detector",
+        supports_multimodal=False,
+        size="2B"
+    )
+
     GRANITE_GUARDIAN_3_1_8B = ModelConfig(
         model_id="ibm-granite/granite-guardian-3.1-8b",
         provider=ModelProvider.IBM,
@@ -134,6 +143,7 @@ class GuardrailModels:
             cls.LLAMA_GUARD_4_12B,
             cls.LLAMA_GUARD_3_1B,
             cls.LLAMA_GUARD_7B,
+            cls.GRANITE_GUARDIAN_3_0_2B,
             cls.GRANITE_GUARDIAN_3_1_8B,
             cls.GRANITE_GUARDIAN_3_2_5B,
             cls.GRANITE_GUARDIAN_HAP_38M,
@@ -172,7 +182,30 @@ class HuggingFaceGuardrailQuery:
     Unified interface for querying Hugging Face guardrail models
     """
     
-    HF_INFERENCE_API_URL = "https://api-inference.huggingface.co/models/{model_id}"
+    HF_ROUTER_API_URL = "https://router.huggingface.co/hf-inference/models/{model_id}"
+    HF_LEGACY_API_URL = "https://api-inference.huggingface.co/models/{model_id}"
+
+    @staticmethod
+    def _load_token_from_env_local() -> None:
+        if os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_TOKEN"):
+            return
+
+        project_root = Path(__file__).resolve().parent.parent
+        env_path = project_root / ".env.local"
+        if not env_path.exists():
+            return
+
+        for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            key = key.strip()
+            value = value.strip().strip('"').strip("'")
+            if key == "HF_TOKEN" and value:
+                os.environ.setdefault("HF_TOKEN", value)
+            elif key == "HUGGINGFACE_TOKEN" and value:
+                os.environ.setdefault("HUGGINGFACE_TOKEN", value)
     
     def __init__(self, api_key: Optional[str] = None):
         """
@@ -181,17 +214,186 @@ class HuggingFaceGuardrailQuery:
         Args:
             api_key: Hugging Face API token (can also be set via HF_TOKEN env var)
         """
+        self._load_token_from_env_local()
         self.api_key = api_key or os.getenv("HF_TOKEN") or os.getenv("HUGGINGFACE_TOKEN")
         if not self.api_key:
             raise ValueError(
                 "Hugging Face API token required. Set HF_TOKEN environment variable "
                 "or pass api_key parameter."
             )
+
+        self.prefer_local = os.getenv("HF_PREFER_LOCAL", "0").lower() in {"1", "true", "yes"}
+        self._local_models: Dict[str, tuple] = {}
         
         self.headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json"
         }
+
+    def _get_or_load_local_model(self, model_id: str):
+        if model_id in self._local_models:
+            return self._local_models[model_id]
+
+        import torch
+        from transformers import AutoTokenizer, AutoModelForCausalLM
+
+        tokenizer = AutoTokenizer.from_pretrained(model_id, token=self.api_key, trust_remote_code=True)
+        dtype = torch.bfloat16 if torch.cuda.is_available() else torch.float32
+        model = AutoModelForCausalLM.from_pretrained(
+            model_id,
+            token=self.api_key,
+            trust_remote_code=True,
+            device_map="auto",
+            dtype=dtype,
+        )
+        model.eval()
+        self._local_models[model_id] = (tokenizer, model)
+        return tokenizer, model
+
+    def _query_model_local(self, prompt: str, model_id: str) -> Dict:
+        import torch
+
+        tokenizer, model = self._get_or_load_local_model(model_id)
+        messages = [{"role": "user", "content": prompt}]
+
+        try:
+            if "granite-guardian" in model_id:
+                formatted = tokenizer.apply_chat_template(
+                    messages,
+                    guardian_config={"risk_name": "harm"},
+                    add_generation_prompt=True,
+                    tokenize=False,
+                )
+            else:
+                formatted = tokenizer.apply_chat_template(
+                    messages,
+                    add_generation_prompt=True,
+                    tokenize=False,
+                )
+        except Exception:
+            formatted = prompt
+
+        encoded = tokenizer(
+            formatted,
+            return_tensors="pt",
+            return_attention_mask=True,
+            truncation=True,
+            max_length=2048,
+        )
+        input_ids = encoded.input_ids.to(model.device)
+        attention_mask = encoded.attention_mask.to(model.device)
+        input_len = input_ids.shape[1]
+
+        with torch.no_grad():
+            output = model.generate(
+                input_ids,
+                attention_mask=attention_mask,
+                do_sample=False,
+                max_new_tokens=20,
+            )
+
+        generated_text = tokenizer.decode(
+            output[:, input_len:][0],
+            skip_special_tokens=True,
+        ).strip()
+
+        return {
+            "generated_text": generated_text,
+            "inference_mode": "local",
+            "model_id": model_id,
+        }
+
+    def _query_model_api(self, prompt: str, model_id: str, timeout: int = 30) -> Dict:
+        router_url = self.HF_ROUTER_API_URL.format(model_id=model_id)
+        legacy_url = self.HF_LEGACY_API_URL.format(model_id=model_id)
+
+        payload = {
+            "inputs": prompt,
+            "options": {
+                "wait_for_model": True
+            }
+        }
+
+        router_error: Optional[str] = None
+
+        try:
+            response = requests.post(
+                router_url,
+                headers=self.headers,
+                json=payload,
+                timeout=timeout
+            )
+            if response.status_code == 410:
+                router_error = "Router endpoint unavailable (410)"
+            else:
+                response.raise_for_status()
+                return response.json()
+
+        except requests.exceptions.HTTPError as e:
+            status_code = e.response.status_code if e.response is not None else -1
+            response_text = e.response.text if e.response is not None else str(e)
+
+            if status_code == 401:
+                raise ValueError("Invalid Hugging Face API token")
+            if status_code == 403:
+                raise RuntimeError(
+                    "HF token lacks Inference Providers permission for this model. "
+                    f"Model: {model_id}"
+                )
+            if status_code == 404:
+                raise ValueError(f"Model not found: {model_id}")
+            if status_code == 503:
+                raise RuntimeError(f"Model {model_id} is currently loading. Try again in a moment.")
+
+            router_error = f"Router HF API error ({status_code}): {response_text}"
+
+        except requests.exceptions.Timeout:
+            raise RuntimeError(f"Request timeout after {timeout}s")
+
+        except Exception as e:
+            router_error = f"Router request failed: {str(e)}"
+
+        try:
+            response = requests.post(
+                legacy_url,
+                headers=self.headers,
+                json=payload,
+                timeout=timeout
+            )
+            response.raise_for_status()
+            return response.json()
+
+        except requests.exceptions.HTTPError as e:
+            status_code = e.response.status_code if e.response is not None else -1
+            response_text = e.response.text if e.response is not None else str(e)
+
+            if status_code == 401:
+                raise ValueError("Invalid Hugging Face API token")
+            if status_code == 403:
+                raise RuntimeError(
+                    "HF token lacks required permissions for model inference. "
+                    f"Model: {model_id}"
+                )
+            if status_code == 404:
+                raise ValueError(f"Model not found: {model_id}")
+            if status_code == 410:
+                raise RuntimeError(
+                    "Legacy Hugging Face endpoint is deprecated (410). "
+                    f"Router error: {router_error}"
+                )
+            if status_code == 503:
+                raise RuntimeError(f"Model {model_id} is currently loading. Try again in a moment.")
+
+            raise RuntimeError(
+                f"HF API error ({status_code}): {response_text}. "
+                f"Router error: {router_error}"
+            )
+
+        except requests.exceptions.Timeout:
+            raise RuntimeError(f"Request timeout after {timeout}s")
+
+        except Exception as e:
+            raise RuntimeError(f"Error querying model: {str(e)}. Router error: {router_error}")
     
     def query_model(
         self,
@@ -200,7 +402,7 @@ class HuggingFaceGuardrailQuery:
         timeout: int = 30
     ) -> Dict:
         """
-        Query a Hugging Face model via Inference API
+        Query a Hugging Face model via Router API (with legacy fallback)
         
         Args:
             prompt: Text prompt to classify
@@ -210,40 +412,16 @@ class HuggingFaceGuardrailQuery:
         Returns:
             Raw API response as dict
         """
-        url = self.HF_INFERENCE_API_URL.format(model_id=model_id)
-        
-        payload = {
-            "inputs": prompt,
-            "options": {
-                "wait_for_model": True  # Wait if model is loading
-            }
-        }
-        
+        if self.prefer_local:
+            return self._query_model_local(prompt, model_id)
+
         try:
-            response = requests.post(
-                url,
-                headers=self.headers,
-                json=payload,
-                timeout=timeout
-            )
-            response.raise_for_status()
-            return response.json()
-        
-        except requests.exceptions.HTTPError as e:
-            if e.response.status_code == 401:
-                raise ValueError("Invalid Hugging Face API token")
-            elif e.response.status_code == 404:
-                raise ValueError(f"Model not found: {model_id}")
-            elif e.response.status_code == 503:
-                raise RuntimeError(f"Model {model_id} is currently loading. Try again in a moment.")
-            else:
-                raise RuntimeError(f"HF API error ({e.response.status_code}): {e.response.text}")
-        
-        except requests.exceptions.Timeout:
-            raise RuntimeError(f"Request timeout after {timeout}s")
-        
-        except Exception as e:
-            raise RuntimeError(f"Error querying model: {str(e)}")
+            return self._query_model_api(prompt, model_id, timeout=timeout)
+        except RuntimeError as error:
+            message = str(error)
+            if "lacks Inference Providers permission" in message or "deprecated (410)" in message:
+                return self._query_model_local(prompt, model_id)
+            raise
     
     def _parse_llama_guard_response(self, response: Dict, model_id: str) -> SafetyClassification:
         """Parse Llama Guard model response"""
@@ -276,31 +454,36 @@ class HuggingFaceGuardrailQuery:
     
     def _parse_granite_guardian_response(self, response: Dict, model_id: str) -> SafetyClassification:
         """Parse Granite Guardian model response"""
-        # Granite Guardian returns risk scores and categories
-        
         if isinstance(response, list) and len(response) > 0:
             result = response[0]
         else:
             result = response
-        
-        # Look for risk indicators in the response
-        generated_text = result.get("generated_text", "").lower()
-        
-        # Granite Guardian outputs risk labels
-        is_risky = any(keyword in generated_text for keyword in ["risk", "unsafe", "violation", "harmful"])
+
+        generated_text = str(result.get("generated_text", "")).strip()
+        generated_text_lower = generated_text.lower()
+
+        if generated_text_lower.startswith("yes"):
+            is_risky = True
+            score = 0.9
+        elif generated_text_lower.startswith("no"):
+            is_risky = False
+            score = 0.1
+        else:
+            is_risky = any(keyword in generated_text_lower for keyword in ["risk", "unsafe", "violation", "harmful", "yes"])
+            score = 0.85 if is_risky else 0.15
         
         # Try to extract category
         category = "general"
-        if "hate" in generated_text or "abuse" in generated_text:
+        if "hate" in generated_text_lower or "abuse" in generated_text_lower:
             category = "hate_speech"
-        elif "profanity" in generated_text:
+        elif "profanity" in generated_text_lower:
             category = "profanity"
-        elif "violence" in generated_text:
+        elif "violence" in generated_text_lower:
             category = "violence"
         
         return SafetyClassification(
             label="unsafe" if is_risky else "safe",
-            score=0.85 if is_risky else 0.15,
+            score=score,
             category=category,
             raw_response=response,
             model_id=model_id
