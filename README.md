@@ -2,6 +2,7 @@
 
 We can query multiple guard rail models at the same time with the same rpompt, take their response as a vector. Plot the similarities where the models spike indidicates safe or bad words.
 
+Have a cname and use the veilstream to deploy
 
 This repository is for a hackathon on 02/27/2026
 
