@@ -269,33 +269,67 @@ def _create_fallback_evaluator():
     return evaluate
 
 
-def _create_robust_evaluator(model_id: str):
-    """Create an evaluator using the local Granite Guardian model"""
-    print(f"[EVALUATOR] Creating evaluator for model: {model_id}")
-    
+def _create_local_granite_evaluator():
+    """Fallback: load the hardcoded Granite Guardian 3.0-2B model locally."""
+    print(f"[EVALUATOR] Loading local Granite Guardian 3.0-2B as fallback...")
     try:
-        # Load the local model
-        print(f"[EVALUATOR] Attempting to load local Granite Guardian model...")
         tokenizer, model = _load_local_model()
-        
-        # Create an evaluator function that uses the local model
-        def local_model_evaluator(prompt: str) -> dict:
+
+        def _eval(prompt: str) -> dict:
             try:
-                print(f"[EVALUATOR] Classifying prompt with local model...")
                 result = _classify_prompt_local(prompt, tokenizer, model)
-                print(f"[EVALUATOR] Classification result: {result}")
+                print(f"[EVALUATOR] Local Granite result: {result}")
                 return result
             except Exception as e:
-                print(f"[EVALUATOR] Error in local model evaluation: {e}")
-                # Fall back to keyword-based evaluator
-                fallback = _create_fallback_evaluator()
-                return fallback(prompt)
-        
-        return local_model_evaluator
+                print(f"[EVALUATOR] Local Granite error: {e} — using keyword fallback")
+                return _create_fallback_evaluator()(prompt)
+
+        return _eval
     except Exception as e:
-        print(f"[EVALUATOR] Failed to load local model: {e}")
-        print(f"[EVALUATOR] Falling back to keyword-based evaluator")
+        print(f"[EVALUATOR] Failed to load local Granite model: {e} — using keyword fallback")
         return _create_fallback_evaluator()
+
+
+def _create_robust_evaluator(model_id: str):
+    """
+    Create a safety evaluator that uses the correct model specified by model_id.
+
+    Priority:
+      1. query.py's HuggingFaceGuardrailQuery — honours model_id, uses the right
+         architecture (sequence classifier vs causal LM) and the correct response parser.
+      2. Local Granite Guardian 3.0-2B — only for IBM/Granite models when query.py fails.
+      3. Keyword-based fallback — last resort for any model when everything else fails.
+    """
+    print(f"[EVALUATOR] Creating evaluator for model: {model_id}")
+
+    # 1. Try the unified query.py interface which properly dispatches per model.
+    try:
+        qpy_eval = create_safety_evaluator(model_id)
+        print(f"[EVALUATOR] Using query.py evaluator for model: {model_id}")
+
+        def query_py_evaluator(prompt: str) -> dict:
+            try:
+                result = qpy_eval(prompt)
+                print(f"[EVALUATOR] query.py classification: label={result.get('label')}, "
+                      f"score={result.get('score')}, category={result.get('category')}")
+                return result
+            except Exception as exc:
+                print(f"[EVALUATOR] query.py call failed ({exc}); trying local Granite fallback")
+                return _create_local_granite_evaluator()(prompt)
+
+        return query_py_evaluator
+
+    except Exception as e:
+        print(f"[EVALUATOR] Could not initialise query.py evaluator: {e}")
+
+    # 2. Local Granite fallback (covers IBM/Granite models if token is missing, etc.)
+    if "granite" in model_id.lower():
+        print(f"[EVALUATOR] Falling back to local Granite Guardian for model: {model_id}")
+        return _create_local_granite_evaluator()
+
+    # 3. Keyword-based last-resort fallback.
+    print(f"[EVALUATOR] Falling back to keyword evaluator for model: {model_id}")
+    return _create_fallback_evaluator()
 
 
 def _resolve_model_id(raw_model_id: str | None) -> str:
