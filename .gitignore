@@ -1,1 +1,12 @@
 .env.local
+./middleware/__pycache__/
+./middleware/venv/
+./middleware/node_modules/
+*__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.env*
+*.DS_Store
+*node_modules/
+*venv/
