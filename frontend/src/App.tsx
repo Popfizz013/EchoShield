@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { SafetyClassificationResult } from "@/components/SafetyClassificationResult";
 import { SplashPage } from "@/components/SplashPage";
 import { EchogramVisualization, type EchogramEdge, type EchogramNode } from "@/components/EchogramVisualization";
+import { LogViewer } from "@/components/LogViewer";
 import { useToast } from "@/hooks/use-toast";
 import { Toaster } from "@/components/ui/toaster";
 
@@ -27,6 +28,8 @@ interface EchogramResult {
   path_node_ids: number[];
   nodes: EchogramNode[];
   edges: EchogramEdge[];
+  logs?: string[];
+  elapsed_ms?: number;
 }
 
 export default function App() {
@@ -36,15 +39,15 @@ export default function App() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [classificationResult, setClassificationResult] = useState<ClassificationResult | null>(null);
   const [echogramResult, setEchogramResult] = useState<EchogramResult | null>(null);
-  const [selectedGuardrail, setSelectedGuardrail] = useState("gemini-2.0-flash");
+  const [selectedGuardrail, setSelectedGuardrail] = useState("ibm-granite/granite-guardian-3.0-2b");
   const { toast } = useToast();
 
   const guardrailModels = [
-    { value: "gemini-2.0-flash", label: "Gemini 2.0 Flash" },
-    { value: "claude-3.5-sonnet", label: "Claude 3.5 Sonnet" },
-    { value: "gpt-4o", label: "GPT-4o" },
-    { value: "llama-2-70b", label: "Llama 2 70B" },
-    { value: "mistral-large", label: "Mistral Large" },
+    { value: "ibm-granite/granite-guardian-3.0-2b", label: "Granite Guardian 3.0 (2B)" },
+    { value: "ibm-granite/granite-guardian-hap-38m", label: "Granite Guardian HAP (38M)" },
+    { value: "meta-llama/Llama-Guard-3-1B", label: "Llama Guard 3 (1B)" },
+    { value: "google/shieldgemma-2b", label: "ShieldGemma (2B)" },
+    { value: "ServiceNow-AI/AprielGuard", label: "AprielGuard" },
   ];
 
   const handleAnalyze = async (e: React.FormEvent) => {
@@ -56,20 +59,51 @@ export default function App() {
     setIsAnalyzing(true);
 
     try {
+      console.log('[Frontend] Calling /api/echogram with prompt:', prompt.substring(0, 50));
       const echogramResponse = await fetch('/api/echogram', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, max_steps: 8, neighbors_per_step: 12 })
+        body: JSON.stringify({
+          prompt,
+          model_id: selectedGuardrail,
+          max_steps: 8,
+          neighbors_per_step: 12,
+        })
       });
 
-      if (!echogramResponse.ok) {
-        throw new Error('Failed to run echogram search');
+      const responseData = await echogramResponse.json();
+      
+      // Check if the response contains an error
+      if (!echogramResponse.ok || responseData?.error) {
+        const errorMessage = responseData?.message || 'An error occurred while running the analysis';
+        console.error('[Frontend] Error response:', responseData);
+        
+        // Check if it's an HF token error
+        const isHFTokenError = errorMessage?.toLowerCase().includes('huggingface') || 
+                               errorMessage?.toLowerCase().includes('hf_token') ||
+                               errorMessage?.toLowerCase().includes('token');
+        
+        toast({
+          variant: "destructive",
+          title: isHFTokenError ? "Configuration Error" : "Analysis Failed",
+          description: isHFTokenError 
+            ? `HuggingFace API Token Issue: ${errorMessage}`
+            : `${errorMessage || 'An error occurred while running search. Please try again.'}`,
+        });
+        return;
       }
 
-      const echogramData: EchogramResult = await echogramResponse.json();
-      setEchogramResult(echogramData);
+      console.log('[Frontend] Received echogram response:', responseData);
+      console.log('[Frontend] Nodes:', responseData.nodes);
+      console.log('[Frontend] Nodes length:', responseData.nodes?.length || 0);
+      console.log('[Frontend] Edges:', responseData.edges);
+      console.log('[Frontend] Edges length:', responseData.edges?.length || 0);
+      
+      setEchogramResult(responseData as EchogramResult);
 
-      const originNode = echogramData.nodes.find((node) => node.parent_id === null) ?? echogramData.nodes[0];
+      const originNode = responseData.nodes?.find((node: EchogramNode) => node.parent_id === null) ?? responseData.nodes?.[0];
+      console.log('[Frontend] Origin node:', originNode);
+      
       if (originNode) {
         setClassificationResult({
           label: originNode.label === 'unsafe' ? 'unsafe' : 'safe',
@@ -80,11 +114,11 @@ export default function App() {
       }
 
     } catch (error) {
-      console.error(error);
+      console.error('[Frontend] Error:', error);
       toast({
         variant: "destructive",
         title: "Analysis Failed",
-        description: "An error occurred while running search. Please try again.",
+        description: "An unexpected error occurred. Please check your connection and try again.",
       });
     } finally {
       setIsAnalyzing(false);
@@ -276,6 +310,12 @@ export default function App() {
                             reason={echogramResult.reason}
                             bestModifiedPrompt={echogramResult.best_modified_prompt}
                             triggerPhrases={echogramResult.trigger_phrases}
+                          />
+                          
+                          <LogViewer 
+                            logs={echogramResult.logs || []} 
+                            elapsedMs={echogramResult.elapsed_ms}
+                            isLoading={isAnalyzing}
                           />
                         </>
                       )}

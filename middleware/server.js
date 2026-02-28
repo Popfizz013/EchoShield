@@ -62,22 +62,29 @@ app.get('/ping', (req, res) => {
 
 app.post('/api/check', async (req, res) => {
   const prompt = typeof req.body?.prompt === 'string' ? req.body.prompt.trim() : '';
+  const model_id = typeof req.body?.model_id === 'string' ? req.body.model_id.trim() : '';
 
   if (!prompt) {
     return res.status(400).json({ error: 'prompt is required' });
   }
 
   try {
-    const pythonResponse = await axios.post(`${PYTHON_URL}/analyze`, { prompt });
-    return res.json(pythonResponse.data);
+    const pythonResponse = await axios.post(`${PYTHON_URL}/analyze`, { prompt, model_id });
+    // Preserve logs from backend
+    const response = pythonResponse.data;
+    response.logs = Array.isArray(pythonResponse.data?.logs) ? pythonResponse.data.logs : [];
+    response.elapsed_ms = pythonResponse.data?.elapsed_ms || 0;
+    return res.json(response);
   } catch (err) {
     console.error('Error forwarding /api/check:', err.message);
-    return res.status(502).json({ error: 'Python service unavailable' });
+    return res.status(502).json({ error: 'Python service unavailable', logs: [`Error: ${err.message}`] });
   }
 });
 
+
 app.post('/api/echogram', async (req, res) => {
   const prompt = typeof req.body?.prompt === 'string' ? req.body.prompt.trim() : '';
+  const model_id = typeof req.body?.model_id === 'string' ? req.body.model_id.trim() : '';
   const max_steps = Number.isFinite(Number(req.body?.max_steps)) ? Number(req.body.max_steps) : 6;
   const neighbors_per_step = Number.isFinite(Number(req.body?.neighbors_per_step))
     ? Number(req.body.neighbors_per_step)
@@ -88,27 +95,56 @@ app.post('/api/echogram', async (req, res) => {
   }
 
   try {
+    console.log(`[Echogram API] Calling backend /search with prompt: "${prompt.substring(0, 50)}..."`);
     const pythonResponse = await axios.post(`${PYTHON_URL}/search`, {
       prompt,
+      model_id,
       max_steps,
       neighbors_per_step,
     });
-    return res.json(formatEchogramResponse(pythonResponse.data, prompt));
+    
+    console.log(`[Echogram API] Backend response received. Nodes: ${pythonResponse.data?.nodes?.length || 0}, Edges: ${pythonResponse.data?.edges?.length || 0}`);
+    
+    // Check if response contains an error
+    if (pythonResponse.data?.error) {
+      console.error(`[Echogram API] Backend returned an error: ${pythonResponse.data.message}`);
+      // Pass the error through to the frontend
+      return res.status(500).json({
+        error: pythonResponse.data.error,
+        message: pythonResponse.data.message,
+        logs: pythonResponse.data.logs || []
+      });
+    }
+    
+    const formattedResponse = formatEchogramResponse(pythonResponse.data, prompt);
+    formattedResponse.logs = Array.isArray(pythonResponse.data?.logs) ? pythonResponse.data.logs : [];
+    formattedResponse.elapsed_ms = pythonResponse.data?.elapsed_ms || 0;
+    
+    console.log(`[Echogram API] Formatted response. Nodes: ${formattedResponse.nodes?.length || 0}, Edges: ${formattedResponse.edges?.length || 0}`);
+    
+    return res.json(formattedResponse);
   } catch (err) {
     console.error('Error forwarding /api/echogram:', err.message);
-    return res.status(502).json({ error: 'Python service unavailable' });
+    const errorMessage = err.response?.data?.message || err.message || 'Unknown error';
+    return res.status(502).json({ 
+      error: 'Python service error', 
+      message: errorMessage,
+      logs: [`Error: ${errorMessage}`] 
+    });
   }
 });
 
+
 app.post('/api/adversarial-search', async (req, res) => {
   const initialPrompt = typeof req.body?.initialPrompt === 'string' ? req.body.initialPrompt.trim() : '';
+  const model_id = typeof req.body?.model_id === 'string' ? req.body.model_id.trim() : '';
 
   if (!initialPrompt) {
     return res.status(400).json({ error: 'initialPrompt is required' });
   }
 
   try {
-    const pythonResponse = await axios.post(`${PYTHON_URL}/analyze`, { prompt: initialPrompt });
+    const pythonResponse = await axios.post(`${PYTHON_URL}/analyze`, { prompt: initialPrompt, model_id });
     const classificationResult = pythonResponse.data;
     
     // Transform the classification result into adversarial prompt generator format
@@ -125,7 +161,7 @@ app.post('/api/adversarial-search', async (req, res) => {
 });
 
 app.post('/api/vulnerability-insights', async (req, res) => {
-  const { originalPrompt, modifiedPrompt, originalClassification, modifiedClassification } = req.body;
+  const { originalPrompt, modifiedPrompt, originalClassification, modifiedClassification, model_id } = req.body;
 
   if (!originalPrompt || !modifiedPrompt) {
     return res.status(400).json({ error: 'originalPrompt and modifiedPrompt are required' });
@@ -133,8 +169,8 @@ app.post('/api/vulnerability-insights', async (req, res) => {
 
   try {
     // Analyze both prompts
-    const originalResponse = await axios.post(`${PYTHON_URL}/analyze`, { prompt: originalPrompt });
-    const modifiedResponse = await axios.post(`${PYTHON_URL}/analyze`, { prompt: modifiedPrompt });
+    const originalResponse = await axios.post(`${PYTHON_URL}/analyze`, { prompt: originalPrompt, model_id });
+    const modifiedResponse = await axios.post(`${PYTHON_URL}/analyze`, { prompt: modifiedPrompt, model_id });
     
     // Generate insights based on the analysis
     return res.json({
