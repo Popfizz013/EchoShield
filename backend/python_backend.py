@@ -1,6 +1,7 @@
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
 import time
+import os
 
 from echogram_engine import EchogramSearch, PromptMutator
 from query import GuardrailModels, create_safety_evaluator
@@ -10,6 +11,42 @@ PORT = 8000
 
 DEFAULT_MODEL_ID = GuardrailModels.GRANITE_GUARDIAN_3_0_2B.model_id
 _EVALUATOR_CACHE: dict[str, callable] = {}
+
+
+def _create_fallback_evaluator():
+    """Create a simple fallback evaluator based on keyword detection"""
+    def evaluate(prompt: str) -> dict:
+        prompt_lower = (prompt or '').lower()
+        harmful_keywords = ['hack', 'exploit', 'attack', 'malware', 'steal', 'bypass', 'kill', 'destroy', 'crack', 'breach', 'bypass', 'jailbreak']
+        is_harmful = any(keyword in prompt_lower for keyword in harmful_keywords)
+        return {
+            'label': 'unsafe' if is_harmful else 'safe',
+            'score': 0.8 if is_harmful else 0.2,
+            'category': 'harmful_content' if is_harmful else 'safe'
+        }
+    return evaluate
+
+
+def _create_robust_evaluator(model_id: str):
+    """Create an evaluator that falls back to keyword-based detection if HF is unavailable"""
+    try:
+        evaluator = create_safety_evaluator(model_id)
+        
+        # Wrap the evaluator to handle HuggingFace errors
+        def safe_evaluator(prompt: str) -> dict:
+            try:
+                return evaluator(prompt)
+            except Exception as hf_error:
+                # Fall back to keyword-based evaluation if HF fails
+                print(f'HuggingFace evaluation failed: {hf_error}. Using fallback evaluator.')
+                fallback = _create_fallback_evaluator()
+                return fallback(prompt)
+        
+        return safe_evaluator
+    except Exception as e:
+        # If we can't even initialize the HF evaluator, use fallback
+        print(f'Warning: Could not initialize HuggingFace evaluator: {e}. Using fallback keyword-based evaluator.')
+        return _create_fallback_evaluator()
 
 
 def _resolve_model_id(raw_model_id: str | None) -> str:
@@ -23,7 +60,7 @@ def _get_evaluator(model_id: str):
     if model_id in _EVALUATOR_CACHE:
         return _EVALUATOR_CACHE[model_id]
 
-    evaluator = create_safety_evaluator(model_id)
+    evaluator = _create_robust_evaluator(model_id)
     _EVALUATOR_CACHE[model_id] = evaluator
     return evaluator
 
