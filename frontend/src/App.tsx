@@ -59,6 +59,7 @@ export default function App() {
     setIsAnalyzing(true);
 
     try {
+      console.log('[Frontend] Calling /api/echogram with prompt:', prompt.substring(0, 50));
       const echogramResponse = await fetch('/api/echogram', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -70,14 +71,39 @@ export default function App() {
         })
       });
 
-      if (!echogramResponse.ok) {
-        throw new Error('Failed to run echogram search');
+      const responseData = await echogramResponse.json();
+      
+      // Check if the response contains an error
+      if (!echogramResponse.ok || responseData?.error) {
+        const errorMessage = responseData?.message || 'An error occurred while running the analysis';
+        console.error('[Frontend] Error response:', responseData);
+        
+        // Check if it's an HF token error
+        const isHFTokenError = errorMessage?.toLowerCase().includes('huggingface') || 
+                               errorMessage?.toLowerCase().includes('hf_token') ||
+                               errorMessage?.toLowerCase().includes('token');
+        
+        toast({
+          variant: "destructive",
+          title: isHFTokenError ? "Configuration Error" : "Analysis Failed",
+          description: isHFTokenError 
+            ? `HuggingFace API Token Issue: ${errorMessage}`
+            : `${errorMessage || 'An error occurred while running search. Please try again.'}`,
+        });
+        return;
       }
 
-      const echogramData: EchogramResult = await echogramResponse.json();
-      setEchogramResult(echogramData);
+      console.log('[Frontend] Received echogram response:', responseData);
+      console.log('[Frontend] Nodes:', responseData.nodes);
+      console.log('[Frontend] Nodes length:', responseData.nodes?.length || 0);
+      console.log('[Frontend] Edges:', responseData.edges);
+      console.log('[Frontend] Edges length:', responseData.edges?.length || 0);
+      
+      setEchogramResult(responseData as EchogramResult);
 
-      const originNode = echogramData.nodes.find((node) => node.parent_id === null) ?? echogramData.nodes[0];
+      const originNode = responseData.nodes?.find((node: EchogramNode) => node.parent_id === null) ?? responseData.nodes?.[0];
+      console.log('[Frontend] Origin node:', originNode);
+      
       if (originNode) {
         setClassificationResult({
           label: originNode.label === 'unsafe' ? 'unsafe' : 'safe',
@@ -88,11 +114,11 @@ export default function App() {
       }
 
     } catch (error) {
-      console.error(error);
+      console.error('[Frontend] Error:', error);
       toast({
         variant: "destructive",
         title: "Analysis Failed",
-        description: "An error occurred while running search. Please try again.",
+        description: "An unexpected error occurred. Please check your connection and try again.",
       });
     } finally {
       setIsAnalyzing(false);

@@ -95,6 +95,7 @@ app.post('/api/echogram', async (req, res) => {
   }
 
   try {
+    console.log(`[Echogram API] Calling backend /search with prompt: "${prompt.substring(0, 50)}..."`);
     const pythonResponse = await axios.post(`${PYTHON_URL}/search`, {
       prompt,
       model_id,
@@ -102,15 +103,34 @@ app.post('/api/echogram', async (req, res) => {
       neighbors_per_step,
     });
     
+    console.log(`[Echogram API] Backend response received. Nodes: ${pythonResponse.data?.nodes?.length || 0}, Edges: ${pythonResponse.data?.edges?.length || 0}`);
+    
+    // Check if response contains an error
+    if (pythonResponse.data?.error) {
+      console.error(`[Echogram API] Backend returned an error: ${pythonResponse.data.message}`);
+      // Pass the error through to the frontend
+      return res.status(500).json({
+        error: pythonResponse.data.error,
+        message: pythonResponse.data.message,
+        logs: pythonResponse.data.logs || []
+      });
+    }
+    
     const formattedResponse = formatEchogramResponse(pythonResponse.data, prompt);
-    // Preserve logs from backend
     formattedResponse.logs = Array.isArray(pythonResponse.data?.logs) ? pythonResponse.data.logs : [];
     formattedResponse.elapsed_ms = pythonResponse.data?.elapsed_ms || 0;
+    
+    console.log(`[Echogram API] Formatted response. Nodes: ${formattedResponse.nodes?.length || 0}, Edges: ${formattedResponse.edges?.length || 0}`);
     
     return res.json(formattedResponse);
   } catch (err) {
     console.error('Error forwarding /api/echogram:', err.message);
-    return res.status(502).json({ error: 'Python service unavailable', logs: [`Error: ${err.message}`] });
+    const errorMessage = err.response?.data?.message || err.message || 'Unknown error';
+    return res.status(502).json({ 
+      error: 'Python service error', 
+      message: errorMessage,
+      logs: [`Error: ${errorMessage}`] 
+    });
   }
 });
 
