@@ -6,24 +6,29 @@ import './App.css'
 function App() {
   const [result, setResult] = useState(null)
   const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState('')
 
   const handlePromptSubmit = async (prompt) => {
     setIsLoading(true)
+    setError('')
+
     try {
-      // Your team member will handle the API integration here
-      // The form will call this handler with the user's prompt
-      console.log('Prompt submitted:', prompt)
-      
-      // Placeholder: Replace with actual API call to backend
-      // const response = await fetch('/api/check', {
-      //   method: 'POST',
-      //   headers: { 'Content-Type': 'application/json' },
-      //   body: JSON.stringify({ prompt })
-      // })
-      // const data = await response.json()
-      // setResult(data)
-    } catch (error) {
-      console.error('Error checking safety:', error)
+      const response = await fetch('/api/check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt }),
+      })
+
+      if (!response.ok) {
+        throw new Error(`Request failed with status ${response.status}`)
+      }
+
+      const data = await response.json()
+      setResult(data)
+    } catch (err) {
+      console.error('Error checking safety:', err)
+      setResult(null)
+      setError('Unable to reach backend. Make sure Node and Python services are running.')
     } finally {
       setIsLoading(false)
     }
@@ -31,6 +36,7 @@ function App() {
 
   const handleClearResult = () => {
     setResult(null)
+    setError('')
   }
 
   return (
@@ -46,6 +52,7 @@ function App() {
 
         <main className="app-main">
           <PromptForm onSubmit={handlePromptSubmit} isLoading={isLoading} />
+          {error && <p className="error-text">{error}</p>}
           <SafetyResult result={result} onClear={handleClearResult} />
         </main>
       </div>
