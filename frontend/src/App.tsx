@@ -8,14 +8,24 @@ import { adversarialPromptGenerator, type AdversarialPromptGeneratorOutput } fro
 import { generateVulnerabilityInsights, type VulnerabilityInsightGeneratorOutput } from "@/ai/flows/vulnerability-insight-generator";
 import { AnalysisResult } from "@/components/AnalysisResult";
 import { VulnerabilityInsightsDisplay } from "@/components/VulnerabilityInsightsDisplay";
+import { SafetyClassificationResult } from "@/components/SafetyClassificationResult";
 import { SplashPage } from "@/components/SplashPage";
 import { useToast } from "@/hooks/use-toast";
 import { Toaster } from "@/components/ui/toaster";
+
+interface ClassificationResult {
+  label: "safe" | "unsafe";
+  score: number;
+  category: string;
+  echo: string;
+}
 
 export default function App() {
   const [hasStarted, setHasStarted] = useState(false);
   const [inputPrompt, setInputPrompt] = useState("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [classificationResult, setClassificationResult] = useState<ClassificationResult | null>(null);
+  const [isClassifying, setIsClassifying] = useState(false);
   const [adversarialResult, setAdversarialResult] = useState<AdversarialPromptGeneratorOutput | null>(null);
   const [insightsResult, setInsightsResult] = useState<VulnerabilityInsightGeneratorOutput | null>(null);
   const [selectedGuardrail, setSelectedGuardrail] = useState("gemini-2.0-flash");
@@ -34,19 +44,35 @@ export default function App() {
     if (!inputPrompt.trim()) return;
 
     setIsAnalyzing(true);
+    setIsClassifying(true);
     setAdversarialResult(null);
     setInsightsResult(null);
 
     try {
-      // 1. Generate adversarial modification
+      // M2: Step 1 - Get initial safety classification
+      const classifyResponse = await fetch('/api/check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: inputPrompt })
+      });
+
+      if (!classifyResponse.ok) {
+        throw new Error('Failed to classify prompt');
+      }
+
+      const classificationData: ClassificationResult = await classifyResponse.json();
+      setClassificationResult(classificationData);
+      setIsClassifying(false);
+
+      // M3: Step 2 - Generate adversarial modification
       const advResult = await adversarialPromptGenerator({ initialPrompt: inputPrompt });
       setAdversarialResult(advResult);
 
-      // 2. Generate insights based on the modification
+      // Step 3 - Generate insights based on the modification
       const insightRes = await generateVulnerabilityInsights({
         originalPrompt: inputPrompt,
         modifiedPrompt: advResult.modifiedPrompt,
-        originalClassification: 'unsafe', // assumed per prompt generator instruction
+        originalClassification: classificationData.label,
         modifiedClassification: advResult.isNowSafe ? 'safe' : 'unsafe',
       });
       setInsightsResult(insightRes);
@@ -60,6 +86,7 @@ export default function App() {
       });
     } finally {
       setIsAnalyzing(false);
+      setIsClassifying(false);
     }
   };
 
@@ -174,19 +201,28 @@ export default function App() {
 
               {/* Right: Results Panel */}
               <div className="lg:col-span-7 space-y-8">
-                {!adversarialResult && !isAnalyzing ? (
+                {!classificationResult && !isAnalyzing ? (
                   <div className="glass-card h-full flex flex-col items-center justify-center py-20 rounded-2xl">
                     <div className="w-16 h-16 rounded-full bg-primary/10 backdrop-blur-sm border border-primary/20 flex items-center justify-center mb-4">
                       <Zap className="w-8 h-8 text-primary" />
                     </div>
                     <h3 className="text-xl font-medium text-foreground mb-2">Ready for Discovery</h3>
                     <p className="text-muted-foreground text-sm max-w-sm text-center">
-                      Submit an initial prompt in the analysis panel to start the adversarial search process.
+                      Submit an initial prompt in the analysis panel to start the safety analysis process.
                     </p>
                   </div>
                 ) : (
                   <>
-                    <div className="space-y-4">
+                    {/* M2: Safety Classification Result */}
+                    <SafetyClassificationResult
+                      label={classificationResult?.label || 'safe'}
+                      score={classificationResult?.score || 0}
+                      category={classificationResult?.category || 'unknown'}
+                      isLoading={isClassifying}
+                    />
+
+                    {/* M3: Adversarial Search Results */}
+                    <div className="space-y-4" style={{ marginTop: adversarialResult ? '1.5rem' : '0' }}>
                       <div className="flex items-center justify-between">
                         <h2 className="text-lg font-semibold flex items-center gap-2">
                           <CornerDownRight className="w-4 h-4 text-primary" />
