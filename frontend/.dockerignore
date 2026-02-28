@@ -1,0 +1,6 @@
+.env.local
+.venv
+__pycache__/
+.vscode
+./.vite
+./dist 
