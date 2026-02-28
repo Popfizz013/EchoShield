@@ -2,8 +2,6 @@
 
 We can query multiple guard rail models at the same time with the same rpompt, take their response as a vector. Plot the similarities where the models spike indidicates safe or bad words.
 
-Have a cname and use the veilstream to deploy
-
 This repository is for a hackathon on 02/27/2026
 
 The EchoShield AI Security Visualization project was developed for the Startup Hackathon hosted by UVic Hacks - a student-led hackathon club that brings together builders, designers, and thinkers to rapidly prototype technology projects that push the limits of creativity and real-world engineering within an intense build sprint.
