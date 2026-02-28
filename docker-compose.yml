@@ -16,7 +16,7 @@ services:
 
   middleware:
     build: 
-      context: ./eachoshield-node
+      context: ./middleware
     ports:
       - "3001:3001"
     environment:
