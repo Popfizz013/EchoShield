@@ -9,6 +9,13 @@ __pycache__/
 dist/
 build/
 .env
+.env.local
 .venv
 venv/
+env/
 .DS_Store
+.git
+.gitignore
+*.log
+*.md
+README.md

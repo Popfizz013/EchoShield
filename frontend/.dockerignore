@@ -1,8 +1,16 @@
 .env.local
+.env*.local
 .venv
 __pycache__/
 .vscode
+.git
+.gitignore
 ./.vite
 ./dist
 node_modules
 package-lock.json
+*.log
+npm-debug.log*
+.DS_Store
+README.md
+*.md

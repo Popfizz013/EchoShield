@@ -1,10 +1,9 @@
 services:
   backend:
-    build: ./backend
+    build: 
+      context: ./backend
     ports:
       - "8000:8000"
-    volumes:
-      - ./backend:/app
     environment:
       - PYTHONUNBUFFERED=1
     networks:
@@ -16,14 +15,12 @@ services:
       retries: 5
 
   middleware:
-    build: ./eachoshield-node
+    build: 
+      context: ./eachoshield-node
     ports:
       - "3001:3001"
-    volumes:
-      - ./eachoshield-node:/app
-      - /app/node_modules
     environment:
-      - NODE_ENV=development
+      - NODE_ENV=production
       - PYTHON_URL=http://backend:8000
     depends_on:
       backend:
@@ -32,14 +29,12 @@ services:
       - echoshield-network
 
   frontend:
-    build: ./frontend
+    build: 
+      context: ./frontend
     ports:
-      - "3000:5173"
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
+      - "3000:3000"
     environment:
-      - NODE_ENV=development
+      - NODE_ENV=production
       - VITE_API_URL=http://localhost:3001
     depends_on:
       - middleware
