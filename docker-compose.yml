@@ -1,4 +1,36 @@
 services:
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+    environment:
+      - PYTHONUNBUFFERED=1
+    networks:
+      - echoshield-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  middleware:
+    build: ./eachoshield-node
+    ports:
+      - "3001:3001"
+    volumes:
+      - ./eachoshield-node:/app
+      - /app/node_modules
+    environment:
+      - NODE_ENV=development
+      - PYTHON_URL=http://backend:8000
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - echoshield-network
+
   frontend:
     build: ./frontend
     ports:
@@ -8,3 +40,12 @@ services:
       - /app/node_modules
     environment:
       - NODE_ENV=development
+      - VITE_API_URL=http://localhost:3001
+    depends_on:
+      - middleware
+    networks:
+      - echoshield-network
+
+networks:
+  echoshield-network:
+    driver: bridge
